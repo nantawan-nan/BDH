@@ -20,7 +20,7 @@ jobs:
       - name: Run all SQL files via Supabase Management API
         env:
           SUPA_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPA_PROJECT_REF: qbsuynmsjieqglxzbqpw
+          SUPA_PROJECT_REF: wiqfwmedoglkpavssvxr
         run: |
           SQL_FILES=$(ls supabase/*.sql 2>/dev/null | sort)
           if [ -z "$SQL_FILES" ]; then
