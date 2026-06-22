@@ -1,0 +1,68 @@
+name: db-migrate
+
+on:
+  push:
+    paths:
+      - 'supabase/**.sql'
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    name: Run SQL Migrations
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run all SQL files via Supabase Management API
+        env:
+          SUPA_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPA_PROJECT_REF: qbsuynmsjieqglxzbqpw
+        run: |
+          SQL_FILES=$(ls supabase/*.sql 2>/dev/null | sort)
+          if [ -z "$SQL_FILES" ]; then
+            echo "ไม่พบไฟล์ .sql"
+            exit 0
+          fi
+
+          ALL_OK=true
+          for FILE in $SQL_FILES; do
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "▶ รัน: $FILE"
+
+            PAYLOAD=$(jq -n --rawfile query "$FILE" '{"query": $query}')
+
+            RESPONSE=$(curl -s -o /tmp/res.json -w "%{http_code}" \
+              -X POST \
+              -H "Authorization: Bearer $SUPA_ACCESS_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "$PAYLOAD" \
+              "https://api.supabase.com/v1/projects/$SUPA_PROJECT_REF/database/query")
+
+            if [ "$RESPONSE" = "200" ] || [ "$RESPONSE" = "201" ]; then
+              echo "✅ $FILE — สำเร็จ"
+              jq -r 'if type=="array" then last | to_entries[] | "   \(.key): \(.value)" else . end' /tmp/res.json 2>/dev/null || true
+            else
+              echo "❌ $FILE — ล้มเหลว (HTTP $RESPONSE)"
+              jq -r '.message // .error // .' /tmp/res.json 2>/dev/null || cat /tmp/res.json
+              ALL_OK=false
+            fi
+          done
+
+          if [ "$ALL_OK" = "true" ]; then
+            echo "✅ Migration ทั้งหมดสำเร็จ"
+          else
+            echo "❌ มีบาง migration ล้มเหลว"
+            exit 1
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          FILES=$(ls supabase/*.sql 2>/dev/null | wc -l)
+          echo "### Migration Result" >> $GITHUB_STEP_SUMMARY
+          echo "- **SQL files:** $FILES ไฟล์" >> $GITHUB_STEP_SUMMARY
+          echo "- **เวลา:** $(TZ='Asia/Bangkok' date '+%d/%m/%Y %H:%M ICT')" >> $GITHUB_STEP_SUMMARY

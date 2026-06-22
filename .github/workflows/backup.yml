@@ -1,0 +1,100 @@
+name: db-backup
+
+on:
+  schedule:
+    - cron: '0 19 * * *'   # 02:00 ICT ทุกคืน (UTC 19:00 = ICT 02:00 +7)
+  workflow_dispatch:         # กด Run ด้วยมือได้ใน Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  backup:
+    name: Supabase Daily Backup (SQL + CSV)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install PostgreSQL client 17
+        run: |
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          pg_dump --version
+
+      - name: Dump SQL + CSV
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$DB_URL" ]; then
+            echo "❌ ยังไม่ได้ตั้ง GitHub secret 'SUPABASE_DB_URL'"
+            echo "   ไปที่ Supabase Dashboard → Project Settings → Database → Connection string → URI (Session pooler)"
+            echo "   แล้วเพิ่มเป็น repo secret ชื่อ SUPABASE_DB_URL"
+            exit 1
+          fi
+          DATE=$(date -u +%Y-%m-%d_%H%M)
+          echo "DATE=$DATE" >> "$GITHUB_ENV"
+          mkdir -p out/csv
+
+          # 1) Full SQL dump — schema public = ทุกตาราง + function + RLS policies + triggers
+          pg_dump "$DB_URL" --schema=public --no-owner --no-privileges --file=out/dump.sql
+          echo "✅ SQL dump — $(du -h out/dump.sql | cut -f1)"
+
+          # 2) CSV ต่อแต่ละตาราง (เปิดใน Excel ได้)
+          TABLES=$(psql "$DB_URL" -Atc "select tablename from pg_tables where schemaname='public' order by tablename")
+          N=0
+          for T in $TABLES; do
+            psql "$DB_URL" -c "\copy (select * from public.\"$T\") to 'out/csv/$T.csv' with csv header"
+            N=$((N+1))
+            echo "  • $T.csv"
+          done
+          echo "✅ CSV — $N ตาราง"
+
+      - name: Compress + Encrypt (AES-256)
+        run: |
+          gzip -c out/dump.sql > "out/backup_${DATE}.sql.gz"
+          tar -czf "out/backup_${DATE}.csv.tar.gz" -C out/csv .
+
+          openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 \
+            -in  "out/backup_${DATE}.sql.gz" \
+            -out "backups/backup_${DATE}.sql.gz.enc" \
+            -k   "${{ secrets.BACKUP_PASSPHRASE }}"
+          openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 \
+            -in  "out/backup_${DATE}.csv.tar.gz" \
+            -out "backups/backup_${DATE}.csv.tar.gz.enc" \
+            -k   "${{ secrets.BACKUP_PASSPHRASE }}"
+
+          echo "✅ encrypted:"
+          du -h "backups/backup_${DATE}.sql.gz.enc" "backups/backup_${DATE}.csv.tar.gz.enc"
+
+      - name: Commit backup
+        run: |
+          git config user.name  "backup-bot"
+          git config user.email "backup-bot@noreply.github.com"
+          git add backups/
+          git commit -m "backup: ${DATE} (SQL+CSV)" || echo "nothing to commit"
+          git push
+
+      - name: Prune old backups (เก็บ 30 ไฟล์ล่าสุดต่อชนิด)
+        run: |
+          cd backups
+          for EXT in "sql.gz.enc" "csv.tar.gz.enc"; do
+            ls -1t *."$EXT" 2>/dev/null | tail -n +31 | xargs -r git rm
+          done
+          git commit -m "backup: prune (keep 30)" || echo "nothing to prune"
+          git push || true
+
+      - name: Summary
+        run: |
+          {
+            echo "### Backup สำเร็จ ✅ (SQL + CSV)"
+            echo "- **SQL:** backups/backup_${DATE}.sql.gz.enc"
+            echo "- **CSV:** backups/backup_${DATE}.csv.tar.gz.enc"
+            echo "- **เวลา:** $(TZ='Asia/Bangkok' date '+%d/%m/%Y %H:%M ICT')"
+            echo "- **Backups SQL ทั้งหมด:** $(ls backups/*.sql.gz.enc 2>/dev/null | wc -l) ไฟล์"
+          } >> "$GITHUB_STEP_SUMMARY"
