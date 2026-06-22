@@ -4749,14 +4749,14 @@ function edActivityLabel(k){
 function edIsTransfer(t){
   const cat  = String((t && t.category) || "").trim();
   const note = String((t && t.note)     || "").trim().toLowerCase();
-  if(/โอนระหว่างบัญชี/.test(cat))   return true;
+  if(/โอน.{0,8}ระหว่างบัญชี/.test(cat))   return true;
   if(/^(เงิน)?โอนระหว่าง/.test(cat))  return true;
   if(/^เงินโอนภายใน/.test(cat))       return true;
   if(/^เงินโอน$/.test(cat))            return true;
   if(/^transfer$/i.test(cat))          return true;
   if(/inter[\s-]?account/.test(cat.toLowerCase())) return true;
   // note hint: บางบริษัทไม่ตั้ง category — เช็คจาก note
-  if(/โอนระหว่างบัญชี/.test(note)) return true;
+  if(/โอน.{0,8}ระหว่างบัญชี/.test(note)) return true;
   return false;
 }
 /* helper: ดึง txs ตาม scope (month + optional exclude transfers) */
