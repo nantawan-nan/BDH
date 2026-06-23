@@ -9889,21 +9889,51 @@ function loanBillPanel(label, months6, mm, key, max, accent, barTop, valColor){
       </div>`; }).join(""):'<div style="margin:auto;color:#93a7b3;font-size:12px">ไม่มีข้อมูลรายเดือน</div>'}
     </div></div>`;
 }
-/* แผงอายุหนี้ (rows ตามช่วงวันค้าง) — key 'p' หรือ 'i' จาก BK */
-function loanAgingPanel(label, BK, key, max, grand, accent, barTop, valColor, trackBg){
+/* วันครบกำหนดต่อบรรทัด — เงินต้น: ตามวันที่ในใบแจ้งหนี้ · ดอกเบี้ย: สิ้นไตรมาสของเดือนที่ออกบิล (ม.ค.–มี.ค.→31 มี.ค. ฯลฯ) */
+function loanLineDue(l){
+  if(l.type!=="interest") return l.date;
+  const y=Number(l.date.slice(0,4)), m=Number(l.date.slice(5,7))||1;
+  const qEnd=Math.ceil(m/3)*3;                 // 3,6,9,12
+  const last=new Date(y, qEnd, 0).getDate();   // วันสุดท้ายของเดือนสิ้นไตรมาส
+  const p=n=>String(n).padStart(2,"0");
+  return `${y}-${p(qEnd)}-${p(last)}`;
+}
+function loanQuarterSub(q){ return [['ม.ค.','มี.ค.'],['เม.ย.','มิ.ย.'],['ก.ค.','ก.ย.'],['ต.ค.','ธ.ค.']][q-1].join('–'); }
+/* จัดกลุ่มยอดคงค้างตามวันครบกำหนด → เลยกำหนด / ครบกำหนด Qx/ปี (≤12 ด.) / ครบกำหนด ปี (ไกลกว่านั้น) */
+function loanMaturityRows(items, asOfISO){
+  const overdue={amt:0,set:new Set()}; const buckets=new Map();
+  const aY=asOfISO?Number(asOfISO.slice(0,4)):0, aM=asOfISO?Number(asOfISO.slice(5,7)):0;
+  items.forEach(it=>{
+    const dy=Number(it.dueISO.slice(0,4)), dm=Number(it.dueISO.slice(5,7))||1;
+    if(asOfISO && it.dueISO < asOfISO){ overdue.amt+=it.out; overdue.set.add(it.code); return; }
+    const ahead=asOfISO?((dy-aY)*12+(dm-aM)):0;
+    let key,label,sub,sortKey;
+    if(ahead<=12){ const q=Math.ceil(dm/3); key='Q'+dy+'-'+q; label='ครบกำหนด Q'+q+'/'+String(dy).slice(2); sub=loanQuarterSub(q); sortKey=dy*100+q*10; }
+    else { key='Y'+dy; label='ครบกำหนด ปี '+dy; sub='ทั้งปี'; sortKey=dy*100+99; }
+    if(!buckets.has(key)) buckets.set(key,{amt:0,set:new Set(),label,sub,sortKey});
+    const o=buckets.get(key); o.amt+=it.out; o.set.add(it.code);
+  });
+  const rows=[];
+  if(overdue.amt>0.005) rows.push({label:'เลยกำหนด',sub:'ค้างเกินวันครบกำหนด',amt:overdue.amt,set:overdue.set,hot:true});
+  [...buckets.values()].sort((a,b)=>a.sortKey-b.sortKey).forEach(o=>rows.push({label:o.label,sub:o.sub,amt:o.amt,set:o.set,hot:false}));
+  return rows;
+}
+/* แผงอายุหนี้ตามวันครบกำหนด (rows จาก loanMaturityRows) */
+function loanAgingPanel(label, rows, grand, accent, barTop, valColor, trackBg){
   const f=loanFmt;
+  const maxAmt=Math.max(1,...rows.map(r=>r.amt));
+  const warn='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#b23b2e" stroke-width="2.4" style="flex:none"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>';
+  const body=rows.length?rows.map(r=>{ const pct=grand?(r.amt/grand*100):0; const w=r.amt/maxAmt*100; return `<div>
+    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:5px;gap:10px">
+      <span style="font-size:12.5px;font-weight:600;color:${r.hot?'#b23b2e':'#14344a'};display:flex;align-items:center;gap:5px">${r.hot?warn:''}${r.label} <span style="font-size:11px;font-weight:400;color:#a3b3bb">${r.sub} · ${r.set.size} ราย</span></span>
+      <span style="font-size:12.5px;font-weight:700;color:${r.hot?'#b23b2e':valColor};white-space:nowrap">฿${f(r.amt)} <span style="color:#a3b3bb;font-weight:500">· ${pct.toFixed(1)}%</span></span>
+    </div>
+    <div style="height:14px;background:${trackBg};border-radius:6px;overflow:hidden"><div style="width:${w}%;height:100%;background:linear-gradient(90deg,${r.hot?'#e89b90':barTop},${r.hot?'#b23b2e':accent});border-radius:6px"></div></div>
+  </div>`; }).join(""):'<div style="color:#93a7b3;font-size:12px;padding:6px 0">ไม่มีรายการคงค้าง</div>';
   return `<div class="ln-glass" style="border-top:3px solid ${accent};padding:18px 20px;flex:1">
     <div style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:3px;background:${accent}"></span><h3 class="ln-h3">อายุหนี้ · ${label}</h3></div>
-    <p class="ln-sub" style="margin-left:18px">ตามจำนวนวันที่ค้างชำระ (นับจากวันที่บิล)</p>
-    <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px">
-      ${BK.map(x=>{ const v=x[key]||0; const pct=grand?(v/grand*100):0; const w=v/max*100; return `<div>
-        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:5px;gap:10px">
-          <span style="font-size:12.5px;font-weight:600;color:#14344a">${x.k} <span style="font-size:11px;font-weight:400;color:#a3b3bb">${x.set.size} ราย</span></span>
-          <span style="font-size:12.5px;font-weight:700;color:${valColor};white-space:nowrap">฿${f(v)} <span style="color:#a3b3bb;font-weight:500">· ${pct.toFixed(1)}%</span></span>
-        </div>
-        <div style="height:14px;background:${trackBg};border-radius:6px;overflow:hidden"><div style="width:${w}%;height:100%;background:linear-gradient(90deg,${barTop},${accent});border-radius:6px"></div></div>
-      </div>`; }).join("")}
-    </div></div>`;
+    <p class="ln-sub" style="margin-left:18px">${label==='ดอกเบี้ย'?'กำหนดชำระทุกไตรมาส · ดบ. เดือน 1–3 ครบสิ้น มี.ค. ฯลฯ':'ตามวันครบกำหนดในใบแจ้งหนี้'}</p>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px">${body}</div></div>`;
 }
 /* หน้า detail ลูกหนี้รายตัว — ตารางงวดจาก lines จริง */
 function loanDetailHTML(b, data, totOut){
@@ -9964,11 +9994,13 @@ function renderToolLoans(anim){
   const totOut=B.reduce((s,b)=>s+b.out,0), totPrin=B.reduce((s,b)=>s+b.principal,0), totInt=B.reduce((s,b)=>s+b.interest,0);
   const totPaid=B.reduce((s,b)=>s+b.paid,0), totBill=B.reduce((s,b)=>s+b.bill,0);
   const pPct=totOut?Math.round(totPrin/totOut*100):0, iPct=totOut?(100-pPct):0;
-  const BK=[{k:"1-30 วัน",lo:1,hi:30},{k:"31-60 วัน",lo:31,hi:60},{k:"61-90 วัน",lo:61,hi:90},{k:"91-180 วัน",lo:91,hi:180},{k:"เกิน 180 วัน",lo:181,hi:1e12}];
-  BK.forEach(x=>{x.p=0;x.i=0;x.set=new Set();});
-  B.forEach(b=>b.lines.forEach(l=>{ if(l.out>0.005 && asOfISO){ const a=loanAgeDays(l.date,asOfISO); const bk=BK.find(x=>a>=x.lo&&a<=x.hi); if(bk){ if(l.type==="interest")bk.i+=l.out; else bk.p+=l.out; bk.set.add(b.code);} } }));
-  const overdue90=BK.filter(x=>x.lo>=91).reduce((s,x)=>s+x.p+x.i,0);
-  const overdue90N=B.filter(b=>b.ageDays>90&&b.out>0.005).length;
+  // ── อายุหนี้ตามวันครบกำหนด (เงินต้น=ดิวใบแจ้งหนี้ · ดอกเบี้ย=สิ้นไตรมาส) ──
+  const dueP=[], dueI=[];
+  B.forEach(b=>b.lines.forEach(l=>{ if(l.out>0.005){ const due=loanLineDue(l); if(l.type==="interest") dueI.push({out:l.out,dueISO:due,code:b.code}); else if(l.type==="principal") dueP.push({out:l.out,dueISO:due,code:b.code}); } }));
+  const matP=loanMaturityRows(dueP, asOfISO), matI=loanMaturityRows(dueI, asOfISO);
+  const ov90Items=[...dueP,...dueI].filter(it=> asOfISO && it.dueISO<asOfISO && loanAgeDays(asOfISO,it.dueISO)>90);
+  const overdue90=ov90Items.reduce((s,it)=>s+it.out,0);
+  const overdue90N=new Set(ov90Items.map(it=>it.code)).size;
   const mm={};
   B.forEach(b=>b.lines.forEach(l=>{ const ym=l.date.slice(0,7); if(!mm[ym])mm[ym]={billP:0,billI:0,paidP:0,paidI:0}; const x=mm[ym]; if(l.type==="interest"){x.billI+=l.bill;x.paidI+=l.paid;}else{x.billP+=l.bill;x.paidP+=l.paid;} }));
   const months=Object.keys(mm).sort().slice(-9);
@@ -9982,7 +10014,6 @@ function renderToolLoans(anim){
   const months6=months.slice(-6);
   const maxBillP=Math.max(1,...months6.map(m=>mm[m].billP));
   const maxBillI=Math.max(1,...months6.map(m=>mm[m].billI));
-  const maxBkP=Math.max(1,...BK.map(x=>x.p)), maxBkI=Math.max(1,...BK.map(x=>x.i));
   const DPAL=['#0f8a7e','#19a394','#39b6a4','#62c8b6','#8ad8c8','#e0a83e','#edc879','#3a6ea5','#6e9be8','#b23b2e'];
   let _acc=0; const donutSegs=B.map((b,i)=>{ const st=_acc; _acc+=totOut?b.out/totOut*360:0; return `${DPAL[i%DPAL.length]} ${st.toFixed(2)}deg ${_acc.toFixed(2)}deg`; });
   const maxDebtorOut=Math.max(1,...B.map(b=>b.out));
@@ -10051,11 +10082,11 @@ function renderToolLoans(anim){
     <div class="ln-2">
       <div class="ln-col">
         ${loanBillPanel('เงินต้น', months6, mm, 'billP', maxBillP, '#0f8a7e','#34c5b4','#0d6b60')}
-        ${loanAgingPanel('เงินต้น', BK, 'p', maxBkP, totPrin, '#0f8a7e','#34c5b4','#0d6b60','rgba(15,138,126,.08)')}
+        ${loanAgingPanel('เงินต้น', matP, totPrin, '#0f8a7e','#34c5b4','#0d6b60','rgba(15,138,126,.08)')}
       </div>
       <div class="ln-col">
         ${loanBillPanel('ดอกเบี้ย', months6, mm, 'billI', maxBillI, '#e0a83e','#efc560','#a9760f')}
-        ${loanAgingPanel('ดอกเบี้ย', BK, 'i', maxBkI, totInt, '#e0a83e','#efc560','#a9760f','rgba(217,154,43,.1)')}
+        ${loanAgingPanel('ดอกเบี้ย', matI, totInt, '#e0a83e','#efc560','#a9760f','rgba(217,154,43,.1)')}
       </div>
     </div>
 
