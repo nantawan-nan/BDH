@@ -9784,7 +9784,7 @@ async function loanUpload(){
     const d=loanGet(); d.data=data; loanSaveCache(data); renderToolLoans();
   }catch(e){ alert("อ่านไฟล์ไม่สำเร็จ: "+(e.message||e)); }
 }
-function loanToggle(code){ const d=loanGet(); if(d.expanded.has(code)) d.expanded.delete(code); else d.expanded.add(code); renderToolLoans(); }
+function loanToggle(code){ const d=loanGet(); if(d.expanded.has(code)) d.expanded.delete(code); else d.expanded.add(code); renderToolLoans(false); }
 function loanInjectCSS(){
   if(document.getElementById("loan-css")) return;
   const s=document.createElement("style"); s.id="loan-css";
@@ -9827,7 +9827,36 @@ function loanAgeDays(aISO, bISO){ const pa=aISO.split("-").map(Number), pb=bISO.
 function loanMonLabel(ym){ const [y,m]=ym.split("-"); return LOAN_MONAB[Number(m)]+y.slice(2); }
 function loanFmtM(n){ return (Math.abs(Number(n||0))/1e6).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
-function renderToolLoans(){
+/* ตัวเลขวิ่ง (count-up) — สแกน leaf element ในหน้าลูกหนี้ (เหมือน Executive Dashboard edAnimMoney)
+   จับ ฿x,xxx.xx · ฿x.xxM · จำนวนเต็ม · xx% (text ปนคำ เช่น "7 ราย" จะไม่โดน) แล้ว animate 0 → ค่าจริง */
+function loanAnimNums(root){
+  root = root || document;
+  const RE = /^(฿)?(\d{1,3}(?:,\d{3})*(?:\.\d+)?)(M|%)?$/;
+  const items = [];
+  for(const el of root.querySelectorAll('.ln-kv, .num, td, span, b')){
+    if(el.children.length) continue;            // leaf เท่านั้น
+    const m = RE.exec(el.textContent.trim());
+    if(!m) continue;
+    const target = parseFloat(m[2].replace(/,/g, ""));
+    if(!isFinite(target)) continue;
+    const dec = (m[2].split(".")[1]||"").length;
+    items.push({ el, pre:m[1]||"", suf:m[3]||"", target, dec });
+    if(items.length > 400) break;               // หน้าใหญ่เกิน → หยุดกัน jank
+  }
+  if(!items.length) return;
+  const fmt = (v, it) => it.pre + v.toLocaleString("th-TH",{minimumFractionDigits:it.dec,maximumFractionDigits:it.dec}) + it.suf;
+  const dur = 650, start = performance.now();
+  const step = (now) => {
+    const p = Math.min(1, (now - start) / dur);
+    const e = 1 - Math.pow(1 - p, 3);
+    for(const it of items) it.el.textContent = fmt(it.target * e, it);
+    if(p < 1) requestAnimationFrame(step);
+    else for(const it of items) it.el.textContent = fmt(it.target, it);
+  };
+  requestAnimationFrame(step);
+}
+
+function renderToolLoans(anim){
   loanInjectCSS();
   const t=TOOLS.find(x=>x.id==="loans"); const co=COMPANIES.find(c=>c.id===state.company); const main=document.getElementById("main");
   const d=loanGet(); if(!d.data) d.data=loanLoadCache(); const data=d.data;
@@ -10005,6 +10034,7 @@ function renderToolLoans(){
     </div>
   </div>`;
   if(window.lucide) try{lucide.createIcons();}catch(e){}
+  if(anim !== false) loanAnimNums(main);   // ★ ตัวเลขวิ่ง count-up (ข้ามตอน toggle แถว กันกระพริบ)
 }
 
 /* router: staff (daily LINE) หรือ executive (30d) */
