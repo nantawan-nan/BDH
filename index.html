@@ -10014,7 +10014,7 @@ function renderToolLoans(anim){
   const months6=months.slice(-6);
   const maxBillP=Math.max(1,...months6.map(m=>mm[m].billP));
   const maxBillI=Math.max(1,...months6.map(m=>mm[m].billI));
-  const DPAL=['#0f8a7e','#e0a83e','#3a6ea5','#d9685a','#7e6bbf','#2e9e6b','#e58f5a','#6e9be8','#c05299','#b23b2e','#16b3a3','#b9821a'];
+  const DPAL=['#54bdb0','#f1cd7e','#8fb3de','#ed9f90','#b3a3da','#86cfa3','#f1b487','#a9c8f0','#dd9cc4','#e89b90','#7fd6cb','#e8c06b'];
   let _acc=0; const donutSegs=B.map((b,i)=>{ const st=_acc; _acc+=totOut?b.out/totOut*360:0; return `${DPAL[i%DPAL.length]} ${st.toFixed(2)}deg ${_acc.toFixed(2)}deg`; });
   const maxDebtorOut=Math.max(1,...B.map(b=>b.out));
 
@@ -10104,14 +10104,13 @@ function renderToolLoans(anim){
             </div>
           </div>
         </div>
-        <div style="display:flex;gap:14px;margin:14px 0 16px;font-size:11px;color:#718898"><span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:3px;background:#0f8a7e"></span>เงินต้น</span><span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:3px;background:#e0a83e"></span>ดอกเบี้ย</span></div>
-        <div style="display:flex;flex-direction:column;gap:13px">
-          ${B.map((b,i)=>{ const pct=totOut?(b.out/totOut*100):0; const w=b.out/maxDebtorOut*100; const pSeg=b.out?(b.principal/b.out*100):0; const iSeg=b.out?(b.interest/b.out*100):0; return `<button class="ln-share" onclick="loanOpenDetail('${esc(b.code)}')">
+        <div style="display:flex;flex-direction:column;gap:13px;margin-top:16px">
+          ${B.map((b,i)=>{ const pct=totOut?(b.out/totOut*100):0; const w=b.out/maxDebtorOut*100; const col=DPAL[i%DPAL.length]; return `<button class="ln-share" onclick="loanOpenDetail('${esc(b.code)}')">
             <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:5px;gap:8px">
-              <span style="font-size:12px;color:#14344a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:7px"><span style="width:9px;height:9px;border-radius:50%;background:${DPAL[i%DPAL.length]};flex:none"></span><b style="color:#0f8a7e">${esc(b.code)}</b> ${esc(b.name)}</span>
+              <span style="font-size:12px;color:#14344a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:7px"><span style="width:9px;height:9px;border-radius:50%;background:${col};flex:none"></span><b style="color:#0f8a7e">${esc(b.code)}</b> ${esc(b.name)}</span>
               <span class="num" style="font-size:12px;font-weight:700;color:#11324a;white-space:nowrap">${pct.toFixed(1)}%</span>
             </div>
-            <div style="display:flex;height:15px;width:${Math.max(8,w)}%;border-radius:6px;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,.4)"><div style="width:${pSeg}%;background:linear-gradient(90deg,#34c5b4,#0f8a7e)"></div><div style="width:${iSeg}%;background:linear-gradient(90deg,#efc560,#d99a2b)"></div></div>
+            <div style="height:15px;width:${Math.max(8,w)}%;border-radius:6px;background:${col};box-shadow:inset 0 0 0 1px rgba(255,255,255,.4)"></div>
           </button>`; }).join("")}
         </div>
       </div>
