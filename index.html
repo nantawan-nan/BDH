@@ -9742,6 +9742,34 @@ function loanGet(){ if(!state.loan) state.loan={}; const co=state.company; if(!s
 function loanCacheKey(){ return "ft-loan-"+state.company; }
 function loanSaveCache(d){ try{ localStorage.setItem(loanCacheKey(), JSON.stringify(d)); }catch(e){} }
 function loanLoadCache(){ try{ const s=localStorage.getItem(loanCacheKey()); return s?JSON.parse(s):null; }catch(e){ return null; } }
+/* ── Cloud (Supabase) — ตาราง loan_data 1 แถว/บริษัท shared ทุกคนที่ login ── */
+async function loanSaveCloud(data){
+  if(!data || !AUTH.user) return;
+  try{
+    const cid = await fopCompanyId(); if(!cid) return;
+    const { error } = await sb.from("loan_data").upsert({
+      company_id: cid, data: data, file_name: data.fileName || null,
+      updated_at: new Date().toISOString(), updated_by: AUTH.user.id
+    }, { onConflict:"company_id" });
+    if(error) console.warn("[loan] cloud save:", error);
+  }catch(e){ console.warn("loanSaveCloud:", e); }
+}
+async function loanSyncFromCloud(){
+  if(!AUTH.user) return;
+  const co = state.company;
+  try{
+    const cid = await fopCompanyId(); if(!cid) return;
+    const { data:rows, error } = await sb.from("loan_data").select("data, updated_at").eq("company_id", cid).limit(1);
+    if(error){ console.warn("[loan] cloud fetch:", error); return; }
+    const d = loanGet();
+    if(rows && rows.length){
+      d.data = rows[0].data; loanSaveCache(d.data);                 // cloud-first: server = source of truth
+      if(state.tool==="loans" && state.company===co) renderToolLoans();
+    } else if(d.data){
+      loanSaveCloud(d.data);                                        // cloud ว่าง + local มี → push (migrate ของเดิมขึ้น cloud)
+    }
+  }catch(e){ console.warn("loanSyncFromCloud:", e); }
+}
 function loanFmt(n){ return Math.abs(Number(n||0)).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function loanParse(book){
   const out = { company:"", asOf:"", borrowers:[] };
@@ -9781,7 +9809,7 @@ async function loanUpload(){
     const data=loanParse(book);
     if(!data.borrowers.length){ alert("ไม่พบข้อมูลลูกหนี้ในไฟล์ — ตรวจรูปแบบรายงาน"); return; }
     data.uploadedAt=new Date().toISOString(); data.fileName=file.name;
-    const d=loanGet(); d.data=data; loanSaveCache(data); renderToolLoans();
+    const d=loanGet(); d.data=data; d._cloudChecked=true; loanSaveCache(data); loanSaveCloud(data); renderToolLoans();
   }catch(e){ alert("อ่านไฟล์ไม่สำเร็จ: "+(e.message||e)); }
 }
 function loanToggle(code){ const d=loanGet(); if(d.expanded.has(code)) d.expanded.delete(code); else d.expanded.add(code); renderToolLoans(false); }
@@ -9981,6 +10009,7 @@ function renderToolLoans(anim){
   loanInjectCSS();
   const t=TOOLS.find(x=>x.id==="loans"); const co=COMPANIES.find(c=>c.id===state.company); const main=document.getElementById("main");
   const d=loanGet(); if(!d.data) d.data=loanLoadCache(); const data=d.data;
+  if(!d._cloudChecked){ d._cloudChecked=true; loanSyncFromCloud(); }   // ดึงจาก cloud ครั้งแรกต่อบริษัท
   if(!data){
     main.innerHTML=`<div class="page-head"><h1>${esc(t.name)} <span class="badge">${esc(co.name)}</span></h1><div class="sub">${esc(t.long||"")}</div></div>
       <div class="card" style="text-align:center;padding:48px 20px">
