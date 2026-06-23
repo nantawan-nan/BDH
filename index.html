@@ -10014,7 +10014,7 @@ function renderToolLoans(anim){
   const months6=months.slice(-6);
   const maxBillP=Math.max(1,...months6.map(m=>mm[m].billP));
   const maxBillI=Math.max(1,...months6.map(m=>mm[m].billI));
-  const DPAL=['#0f8a7e','#19a394','#39b6a4','#62c8b6','#8ad8c8','#e0a83e','#edc879','#3a6ea5','#6e9be8','#b23b2e'];
+  const DPAL=['#0f8a7e','#e0a83e','#3a6ea5','#d9685a','#7e6bbf','#2e9e6b','#e58f5a','#6e9be8','#c05299','#b23b2e','#16b3a3','#b9821a'];
   let _acc=0; const donutSegs=B.map((b,i)=>{ const st=_acc; _acc+=totOut?b.out/totOut*360:0; return `${DPAL[i%DPAL.length]} ${st.toFixed(2)}deg ${_acc.toFixed(2)}deg`; });
   const maxDebtorOut=Math.max(1,...B.map(b=>b.out));
 
