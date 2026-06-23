@@ -9899,23 +9899,30 @@ function loanLineDue(l){
   return `${y}-${p(qEnd)}-${p(last)}`;
 }
 function loanQuarterSub(q){ return [['ม.ค.','มี.ค.'],['เม.ย.','มิ.ย.'],['ก.ค.','ก.ย.'],['ต.ค.','ธ.ค.']][q-1].join('–'); }
-/* จัดกลุ่มยอดคงค้างตามวันครบกำหนด → เลยกำหนด / ครบกำหนด Qx/ปี (≤12 ด.) / ครบกำหนด ปี (ไกลกว่านั้น) */
+/* จัดกลุ่มยอดคงค้าง: ส่วนเลยกำหนด → ซอยตามช่วงอายุ (1–30/31–60/61–90/91–180/180+ วัน)
+   ส่วนยังไม่ถึงกำหนด → ครบกำหนด Qx/ปี (≤12 ด.) หรือ ครบกำหนด ปี (ไกลกว่านั้น) */
 function loanMaturityRows(items, asOfISO){
-  const overdue={amt:0,set:new Set()}; const buckets=new Map();
+  const AB=[{k:'เลยกำหนด 1–30 วัน',lo:1,hi:30},{k:'เลยกำหนด 31–60 วัน',lo:31,hi:60},{k:'เลยกำหนด 61–90 วัน',lo:61,hi:90},{k:'เลยกำหนด 91–180 วัน',lo:91,hi:180},{k:'เลยกำหนด เกิน 180 วัน',lo:181,hi:1e12}];
+  AB.forEach(x=>{x.amt=0;x.set=new Set();});
+  const upcoming=new Map();
   const aY=asOfISO?Number(asOfISO.slice(0,4)):0, aM=asOfISO?Number(asOfISO.slice(5,7)):0;
   items.forEach(it=>{
-    const dy=Number(it.dueISO.slice(0,4)), dm=Number(it.dueISO.slice(5,7))||1;
-    if(asOfISO && it.dueISO < asOfISO){ overdue.amt+=it.out; overdue.set.add(it.code); return; }
-    const ahead=asOfISO?((dy-aY)*12+(dm-aM)):0;
-    let key,label,sub,sortKey;
-    if(ahead<=12){ const q=Math.ceil(dm/3); key='Q'+dy+'-'+q; label='ครบกำหนด Q'+q+'/'+String(dy).slice(2); sub=loanQuarterSub(q); sortKey=dy*100+q*10; }
-    else { key='Y'+dy; label='ครบกำหนด ปี '+dy; sub='ทั้งปี'; sortKey=dy*100+99; }
-    if(!buckets.has(key)) buckets.set(key,{amt:0,set:new Set(),label,sub,sortKey});
-    const o=buckets.get(key); o.amt+=it.out; o.set.add(it.code);
+    const od = asOfISO ? loanAgeDays(asOfISO, it.dueISO) : 0;   // asOf − due (บวก=เลยกำหนด)
+    if(od>=1){
+      const b=AB.find(x=>od>=x.lo&&od<=x.hi); if(b){ b.amt+=it.out; b.set.add(it.code); }
+    } else {
+      const dy=Number(it.dueISO.slice(0,4)), dm=Number(it.dueISO.slice(5,7))||1;
+      const ahead=asOfISO?((dy-aY)*12+(dm-aM)):0;
+      let key,label,sub,sortKey;
+      if(ahead<=12){ const q=Math.ceil(dm/3); key='Q'+dy+'-'+q; label='ครบกำหนด Q'+q+'/'+String(dy).slice(2); sub=loanQuarterSub(q); sortKey=dy*100+q*10; }
+      else { key='Y'+dy; label='ครบกำหนด ปี '+dy; sub='ทั้งปี'; sortKey=dy*100+99; }
+      if(!upcoming.has(key)) upcoming.set(key,{amt:0,set:new Set(),label,sub,sortKey});
+      const o=upcoming.get(key); o.amt+=it.out; o.set.add(it.code);
+    }
   });
   const rows=[];
-  if(overdue.amt>0.005) rows.push({label:'เลยกำหนด',sub:'ค้างเกินวันครบกำหนด',amt:overdue.amt,set:overdue.set,hot:true});
-  [...buckets.values()].sort((a,b)=>a.sortKey-b.sortKey).forEach(o=>rows.push({label:o.label,sub:o.sub,amt:o.amt,set:o.set,hot:false}));
+  AB.forEach(x=>{ if(x.amt>0.005) rows.push({label:x.k,sub:'ค้างชำระ',amt:x.amt,set:x.set,hot:true}); });
+  [...upcoming.values()].sort((a,b)=>a.sortKey-b.sortKey).forEach(o=>rows.push({label:o.label,sub:o.sub,amt:o.amt,set:o.set,hot:false}));
   return rows;
 }
 /* แผงอายุหนี้ตามวันครบกำหนด (rows จาก loanMaturityRows) */
