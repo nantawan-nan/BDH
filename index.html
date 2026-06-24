@@ -4,6 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Finance Tools — เครื่องมือคลีนข้อมูล</title>
+<link rel="icon" id="appFavicon" href="logos/bdh-logo.png" />
+<link rel="apple-touch-icon" id="appFaviconApple" href="logos/bdh-logo.png" />
 <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -620,6 +622,13 @@ function applyCompanyTheme(id){
   set("--brand", th&&th.brand); set("--brand-dark", th&&th.brandDark); set("--brand-soft", th&&th.brandSoft); set("--brand-rgb", th&&th.brandRgb);
   set("--in", th&&th.in); set("--in-soft", th&&th.inSoft); set("--in-ink", th&&th.inInk);
   set("--out", th&&th.out); set("--out-soft", th&&th.outSoft); set("--out-ink", th&&th.outInk);
+  // หัวแท็บเบราว์เซอร์ (favicon + title) = โลโก้/ชื่อบริษัทปัจจุบัน
+  const co = COMPANIES.find(c=>c.id===id);
+  if(co){
+    const setIc=(elId)=>{ let el=document.getElementById(elId); if(!el){ el=document.createElement("link"); el.id=elId; el.rel=elId==="appFaviconApple"?"apple-touch-icon":"icon"; document.head.appendChild(el); } if(co.logo) el.href=co.logo; };
+    setIc("appFavicon"); setIc("appFaviconApple");
+    document.title = (co.name||co.short||co.code||"Finance Tools") + " — Finance Tools";
+  }
 }
 
 /* sheetHints:
@@ -6048,19 +6057,15 @@ function edRenderSummary(){
       ${acts.map(actCard).join("")}
     </div>
 
-    <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-bottom:16px">
+    <div style="margin-bottom:16px">
       <div class="card" style="margin-bottom:0">
-        <h3 style="font-size:18px">กระแสเงินสดรายเดือน <span style="font-weight:400;color:#94a3b8;font-size:13.5px">Monthly Cash Flow · รวมทุกบัญชี</span></h3>
-        <div style="position:relative;height:280px"><canvas id="edChartMonthly"></canvas></div>
-      </div>
-      <div class="card" style="margin-bottom:0">
-        <h3 style="font-size:18px">สัดส่วน รับ vs จ่าย <span style="font-weight:400;color:#94a3b8;font-size:13.5px">Receipts vs Payments</span></h3>
-        <div style="position:relative;height:280px"><canvas id="edChartIO"></canvas></div>
+        <h3 style="font-size:20px">กระแสเงินสดรายเดือน <span style="font-weight:400;color:#94a3b8;font-size:14px">Monthly Cash Flow · รวมทุกบัญชี</span></h3>
+        <div style="position:relative;height:460px"><canvas id="edChartMonthly"></canvas></div>
       </div>
     </div>
 
     <div class="card">
-      <h3 style="font-size:18px">Top 5 หมวด รายรับ / รายจ่าย <span style="font-weight:400;color:#94a3b8;font-size:13.5px">Top 5 Categories</span></h3>
+      <h3 style="font-size:18px">Top 10 หมวด รายรับ / รายจ่าย <span style="font-weight:400;color:#94a3b8;font-size:13.5px">Top 10 Categories · หักลบรับ-จ่ายในหมวดเดียวกันแล้ว</span></h3>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
         ${edTopList(A.byCat,"in")}
         ${edTopList(A.byCat,"out")}
@@ -6099,14 +6104,15 @@ function edRenderSummary(){
     },
     plugins:[edBarLabelPlugin]
   });
-  edMakeChart("edChartIO", {
-    type:"doughnut",
-    data:{ labels:["เงินรับ","เงินจ่าย"], datasets:[{ data:[A.totalIn, A.totalOut], backgroundColor:[ED_COLORS.in, ED_COLORS.out] }] },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:"bottom"}, tooltip:{ callbacks:{ label:c=>c.label+": "+edFmt(c.parsed) } } } }
-  });
 }
 function edTopList(byCat, dir){
-  const arr = Object.entries(byCat).map(([k,v])=>({k, v:v[dir]})).filter(x=>x.v>0).sort((a,b)=>b.v-a.v).slice(0,5);
+  // หักลบรับ-จ่ายในหมวดเดียวกันก่อน (net) → หมวด net บวก = รายรับ · net ลบ = รายจ่าย
+  // กันยอดรับเล็กๆ ในหมวดจ่าย (เช่น refund) ไปโผล่ฝั่งรายรับ
+  const arr = Object.entries(byCat).map(([k,v])=>{
+    const net = (v.in||0) - (v.out||0);
+    return {k, net, v:Math.abs(net)};
+  }).filter(x => dir==="in" ? x.net > 0.005 : x.net < -0.005)
+    .sort((a,b)=>b.v-a.v).slice(0,10);
   const total = arr.reduce((s,x)=>s+x.v,0);
   const color = dir==="in" ? ED_COLORS.in : ED_COLORS.out;
   const title = dir==="in" ? "หมวดรายรับ" : "หมวดรายจ่าย";
@@ -6239,6 +6245,14 @@ function edRenderFinKpis(A, data, monthFilter){
           evalBench(adRatio, 30, 20, "lo"),
           "ค่าโฆษณา / รายรับดำเนินงาน",
           "ไม่เกิน 20%")}
+      </div>
+      <div style="margin-top:13px;padding-top:11px;border-top:1px dashed #e2e8f0;font-size:11px;color:#94a3b8;line-height:1.65">
+        <b style="color:#64748b">ที่มาของเกณฑ์มาตรฐาน:</b> ค่าอ้างอิงเป็น “rule of thumb” ทั่วไปจากการวิเคราะห์อัตราส่วนทางการเงิน (financial ratio analysis) ซึ่งแตกต่างกันตามอุตสาหกรรม — ใช้เป็นแนวเทียบเบื้องต้น ไม่ใช่เกณฑ์ตายตัว:
+        <br>• <b>อัตรากำไรเงินสด / Net Margin</b> ≥ 5–10% — เกณฑ์อัตรากำไรสุทธิทั่วไป
+        &nbsp;•&nbsp; <b>Operating Cash Flow Ratio</b> ≥ 1.0 (100%) = กระแสเงินสดจากการดำเนินงานครอบคลุมภาระระยะสั้น
+        &nbsp;•&nbsp; <b>Cash Burn</b> ควรต่ำกว่ารายรับเฉลี่ยต่อเดือน
+        <br>• <b>Op Expense Ratio</b> ≤ 80% &nbsp;•&nbsp; <b>สัดส่วนค่าใช้จ่ายพนักงาน</b> ≤ 30% ของรายได้ &nbsp;•&nbsp; <b>สัดส่วนค่าโฆษณา</b> ≤ 20% (แนวทางบริหารต้นทุน SME)
+        <br><span style="color:#b0bcc9">แหล่งอ้างอิงทั่วไป: Investopedia — Financial Ratios / Operating Cash Flow Ratio · หลักการบัญชีบริหารและการวิเคราะห์งบการเงิน. ปรับเกณฑ์ได้ตามนโยบายของบริษัท</span>
       </div>
     </div>`;
 }
@@ -9824,40 +9838,40 @@ function loanInjectCSS(){
   .ln-card{background:#fff;border:1px solid #e6efee;border-radius:16px;padding:16px 16px 14px;box-shadow:0 1px 2px rgba(20,52,74,.04);display:flex;flex-direction:column;gap:8px;transition:.14s}
   .ln-card.red{border-color:#f1d9d3}
   .ln-card.dark{background:linear-gradient(150deg,#11324a,#16455f);border:none;color:#fff;box-shadow:0 14px 30px -16px rgba(17,50,74,.6)}
-  .ln-ic{width:33px;height:33px;border-radius:10px;display:flex;align-items:center;justify-content:center}
-  .ln-kl{font-size:11px;color:#93a7b3}
+  .ln-ic{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center}
+  .ln-kl{font-size:13px;color:#93a7b3}
   .ln-card.dark .ln-kl{color:#a8c0cb}
-  .ln-kv{font-size:21px;font-weight:700;letter-spacing:-.5px;color:#11324a}
+  .ln-kv{font-size:26px;font-weight:700;letter-spacing:-.5px;color:#11324a}
   .ln-card.dark .ln-kv{color:#fff}
   .ln-panel{background:#fff;border:1px solid #e6efee;border-radius:16px;padding:18px 20px;box-shadow:0 1px 2px rgba(20,52,74,.04)}
-  .ln-h3{font-size:15px;font-weight:700;color:#11324a}
-  .ln-sub{font-size:12px;color:#93a7b3;margin-top:2px}
+  .ln-h3{font-size:18px;font-weight:700;color:#11324a}
+  .ln-sub{font-size:13.5px;color:#93a7b3;margin-top:2px}
   .ln-row2{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px}
   @media(max-width:980px){.ln-row2{grid-template-columns:1fr}}
   .ln-row2b{display:grid;grid-template-columns:minmax(0,2.6fr) minmax(0,1fr);gap:16px;align-items:start}
   @media(max-width:980px){.ln-row2b{grid-template-columns:1fr}}
-  .ln-tbl{width:100%;border-collapse:collapse;font-size:12.5px}
-  .ln-tbl thead tr{background:#f6faf9;color:#718898;font-size:11px}
-  .ln-tbl th{padding:10px 13px;font-weight:600;text-align:right}
+  .ln-tbl{width:100%;border-collapse:collapse;font-size:14px}
+  .ln-tbl thead tr{background:#f6faf9;color:#718898;font-size:12.5px}
+  .ln-tbl th{padding:12px 14px;font-weight:600;text-align:right}
   .ln-tbl th:first-child{text-align:left}
-  .ln-tbl td{padding:11px 13px;text-align:right;border-top:1px solid #eef2f1}
+  .ln-tbl td{padding:13px 14px;text-align:right;border-top:1px solid #eef2f1}
   .ln-tbl td:first-child{text-align:left}
   .ln-tbl tbody tr.brow:hover{background:#f9fcfb;cursor:pointer}
-  .ln-pill{display:inline-block;padding:3px 9px;border-radius:7px;font-size:11px;font-weight:600}
+  .ln-pill{display:inline-block;padding:4px 11px;border-radius:7px;font-size:12.5px;font-weight:600}
   .ln-bar{flex:1;height:22px;background:#f0f4f3;border-radius:6px;overflow:hidden;display:flex}
   .ln-glass{background:#fff;border:1px solid #e6efee;border-radius:20px;box-shadow:0 18px 40px -28px rgba(20,52,74,.4),0 1px 3px rgba(20,52,74,.05)}
   .ln-hero{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:26px;align-items:center;padding:24px 26px}
   .ln-hero-r{display:flex;flex-direction:column;gap:13px;border-left:1px solid rgba(20,52,74,.08);padding-left:26px}
-  .ln-big{font-size:40px;font-weight:700;color:#11324a;letter-spacing:-1.3px;line-height:1.05;margin-top:2px}
-  .ln-stack{display:flex;height:22px;border-radius:8px;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,.5)}
+  .ln-big{font-size:48px;font-weight:700;color:#11324a;letter-spacing:-1.3px;line-height:1.05;margin-top:2px}
+  .ln-stack{display:flex;height:28px;border-radius:8px;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,.5)}
   .ln-chip{flex:1;min-width:185px;border-radius:15px;padding:13px 15px;display:flex;align-items:center;gap:12px}
   .ln-sec{display:flex;align-items:center;gap:11px;margin-top:4px;flex-wrap:wrap}
-  .ln-sec b{font-size:15px;font-weight:700;color:#11324a}
-  .ln-sec span{font-size:12px;color:#93a7b3}
+  .ln-sec b{font-size:18px;font-weight:700;color:#11324a}
+  .ln-sec span{font-size:13.5px;color:#93a7b3}
   .ln-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
   .ln-col{display:flex;flex-direction:column;gap:16px}
   .ln-3{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1.95fr);gap:16px;align-items:start}
-  .ln-bars{display:flex;align-items:flex-end;gap:10px;height:158px;margin-top:18px}
+  .ln-bars{display:flex;align-items:flex-end;gap:10px;height:210px;margin-top:18px}
   .ln-bar1{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:6px;height:100%}
   .ln-share{text-align:left;border:none;background:transparent;cursor:pointer;font-family:inherit;padding:0;width:100%}
   .ln-share:hover{opacity:.82}
@@ -9919,9 +9933,9 @@ function loanBillPanel(label, months6, mm, key, max, accent, barTop, valColor, m
       ${months6.length?months6.map(m=>{ const v=mm[m]?mm[m][key]:0; const h=Math.max(4,v/max*100);
         const dk=drillKey+'_'+m; window.__loanDrill[dk]=Object.entries((mmByCode&&mmByCode[m]&&mmByCode[m][key])||{}).map(([k,amt])=>({k,amt}));
         return `<div class="ln-bar1 ln-click" style="border-radius:7px" onclick="loanDrill('${dk}','ยอดเรียกเก็บ ${label} · ${loanMonLabel(m)}')">
-        <span class="num" style="font-size:11px;font-weight:700;color:${valColor}">${(v/1e6).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-        <div style="width:62%;max-width:36px;height:${h}%;min-height:4px;background:linear-gradient(180deg,${barTop},${accent});border-radius:7px 7px 3px 3px"></div>
-        <span style="font-size:11px;color:#93a7b3">${loanMonLabel(m)}</span>
+        <span class="num" style="font-size:14px;font-weight:700;color:${valColor}">${(v/1e6).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+        <div style="width:74%;max-width:48px;height:${h}%;min-height:4px;background:linear-gradient(180deg,${barTop},${accent});border-radius:7px 7px 3px 3px"></div>
+        <span style="font-size:13px;color:#93a7b3">${loanMonLabel(m)}</span>
       </div>`; }).join(""):'<div style="margin:auto;color:#93a7b3;font-size:12px">ไม่มีข้อมูลรายเดือน</div>'}
     </div></div>`;
 }
@@ -9966,16 +9980,16 @@ function loanMaturityRows(items, asOfISO){
 function loanAgingPanel(label, rows, grand, accent, barTop, valColor, trackBg, drillKey){
   const f=loanFmt;
   const maxAmt=Math.max(1,...rows.map(r=>r.amt));
-  const warn='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#b23b2e" stroke-width="2.4" style="flex:none"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>';
+  const warn='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b23b2e" stroke-width="2.4" style="flex:none"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>';
   window.__loanDrill = window.__loanDrill || {};
   const body=rows.length?rows.map((r,i)=>{ const pct=grand?(r.amt/grand*100):0; const w=r.amt/maxAmt*100;
     const dk=drillKey+'_'+i; window.__loanDrill[dk]=Object.entries(r.by||{}).map(([k,amt])=>({k,amt}));
     return `<div class="ln-click" style="border-radius:8px;padding:2px 4px;margin:0 -4px" onclick="loanDrill('${dk}','อายุหนี้ ${label} · ${r.label}')">
     <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:5px;gap:10px">
-      <span style="font-size:12.5px;font-weight:600;color:${r.hot?'#b23b2e':'#14344a'};display:flex;align-items:center;gap:5px">${r.hot?warn:''}${r.label} <span style="font-size:11px;font-weight:400;color:#a3b3bb">${r.sub} · ${r.set.size} ราย</span></span>
-      <span style="font-size:12.5px;font-weight:700;color:${r.hot?'#b23b2e':valColor};white-space:nowrap">฿${f(r.amt)} <span style="color:#a3b3bb;font-weight:500">· ${pct.toFixed(1)}%</span></span>
+      <span style="font-size:14px;font-weight:600;color:${r.hot?'#b23b2e':'#14344a'};display:flex;align-items:center;gap:5px">${r.hot?warn:''}${r.label} <span style="font-size:12.5px;font-weight:400;color:#a3b3bb">${r.sub} · ${r.set.size} ราย</span></span>
+      <span style="font-size:14px;font-weight:700;color:${r.hot?'#b23b2e':valColor};white-space:nowrap">฿${f(r.amt)} <span style="color:#a3b3bb;font-weight:500">· ${pct.toFixed(1)}%</span></span>
     </div>
-    <div style="height:14px;background:${trackBg};border-radius:6px;overflow:hidden"><div style="width:${w}%;height:100%;background:linear-gradient(90deg,${r.hot?'#e89b90':barTop},${r.hot?'#b23b2e':accent});border-radius:6px"></div></div>
+    <div style="height:18px;background:${trackBg};border-radius:6px;overflow:hidden"><div style="width:${w}%;height:100%;background:linear-gradient(90deg,${r.hot?'#e89b90':barTop},${r.hot?'#b23b2e':accent});border-radius:6px"></div></div>
   </div>`; }).join(""):'<div style="color:#93a7b3;font-size:12px;padding:6px 0">ไม่มีรายการคงค้าง</div>';
   return `<div class="ln-glass" style="border-top:3px solid ${accent};padding:18px 20px;flex:1">
     <div style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:3px;background:${accent}"></span><h3 class="ln-h3">อายุหนี้ · ${label}</h3></div>
@@ -10113,10 +10127,10 @@ function renderToolLoans(anim){
       <div style="flex:1;min-width:240px">
         <div style="display:flex;align-items:center;gap:10px">
           <div style="width:5px;height:28px;border-radius:3px;background:linear-gradient(180deg,#16b3a3,#0f8a7e)"></div>
-          <h1 style="font-size:23px;font-weight:700;color:#11324a;letter-spacing:-.2px">Dashboard ลูกหนี้คงค้าง</h1>
-          <span style="border:1px solid #cfe6e1;color:#0f8a7e;font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px">พอร์ตสินเชื่อ</span>
+          <h1 style="font-size:27px;font-weight:700;color:#11324a;letter-spacing:-.2px">Dashboard ลูกหนี้คงค้าง</h1>
+          <span style="border:1px solid #cfe6e1;color:#0f8a7e;font-size:12.5px;font-weight:700;padding:4px 10px;border-radius:6px">พอร์ตสินเชื่อ</span>
         </div>
-        <div style="margin-top:6px;margin-left:15px;font-size:12.5px;color:#718898">${data.asOf?`ณ วันที่ ${esc(data.asOf)} · `:''}อัปเดต ${new Date(data.uploadedAt).toLocaleString("th-TH",{dateStyle:"short",timeStyle:"short"})} · หน่วย: บาท</div>
+        <div style="margin-top:6px;margin-left:15px;font-size:14px;color:#718898">${data.asOf?`ณ วันที่ ${esc(data.asOf)} · `:''}อัปเดต ${new Date(data.uploadedAt).toLocaleString("th-TH",{dateStyle:"short",timeStyle:"short"})} · หน่วย: บาท</div>
       </div>
       <button class="btn" onclick="loanUpload()"><i data-lucide="upload"></i> อัปไฟล์ใหม่</button>
     </div>
@@ -10124,36 +10138,36 @@ function renderToolLoans(anim){
     <div class="ln-glass ln-hero">
       <div style="display:flex;flex-direction:column;gap:18px">
         <div class="ln-click" style="border-radius:10px;padding:4px 6px;margin:-4px -6px" onclick="loanDrill('total','ลูกหนี้คงค้างรวม')">
-          <div style="font-size:13px;color:#718898;font-weight:600">ลูกหนี้คงค้างรวม</div>
+          <div style="font-size:15px;color:#718898;font-weight:600">ลูกหนี้คงค้างรวม</div>
           <div class="ln-big">฿${f(totOut)}</div>
-          <div class="num" style="font-size:12.5px;color:#93a7b3;margin-top:4px">${B.length} ราย · ${periods} งวด</div>
+          <div class="num" style="font-size:14px;color:#93a7b3;margin-top:4px">${B.length} ราย · ${periods} งวด</div>
         </div>
         <div class="ln-stack">
-          <div style="width:${pPct}%;background:linear-gradient(90deg,#16b3a3,#0f8a7e);display:flex;align-items:center;padding-left:10px;color:#fff;font-size:11px;font-weight:700">${pPct}%</div>
-          <div style="width:${iPct}%;background:linear-gradient(90deg,#e8b94f,#d99a2b);display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700">${iPct}%</div>
+          <div style="width:${pPct}%;background:linear-gradient(90deg,#16b3a3,#0f8a7e);display:flex;align-items:center;padding-left:10px;color:#fff;font-size:12.5px;font-weight:700">${pPct}%</div>
+          <div style="width:${iPct}%;background:linear-gradient(90deg,#e8b94f,#d99a2b);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12.5px;font-weight:700">${iPct}%</div>
         </div>
         <div style="display:flex;align-items:stretch;gap:14px;flex-wrap:wrap">
           <div class="ln-chip ln-click" style="background:rgba(15,138,126,.07);border:1px solid rgba(15,138,126,.2)" onclick="loanDrill('prin','เงินต้นคงค้าง · Principal')">
             ${kic("rgba(15,138,126,.16)","#0f8a7e",'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6"/></svg>')}
-            <div style="min-width:0"><div style="font-size:11.5px;color:#0d6b60;font-weight:600">เงินต้นคงค้าง · Principal</div><div class="num" style="font-size:20px;font-weight:700;color:#0d6b60;letter-spacing:-.4px">฿${f(totPrin)}</div></div>
+            <div style="min-width:0"><div style="font-size:13px;color:#0d6b60;font-weight:600">เงินต้นคงค้าง · Principal</div><div class="num" style="font-size:24px;font-weight:700;color:#0d6b60;letter-spacing:-.4px">฿${f(totPrin)}</div></div>
           </div>
-          <div style="display:flex;align-items:center;font-size:24px;font-weight:700;color:#aebcc2">+</div>
+          <div style="display:flex;align-items:center;font-size:28px;font-weight:700;color:#aebcc2">+</div>
           <div class="ln-chip ln-click" style="background:rgba(217,154,43,.09);border:1px solid rgba(217,154,43,.28)" onclick="loanDrill('intr','ดอกเบี้ยคงค้าง · Interest')">
             ${kic("rgba(217,154,43,.18)","#c08418",'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>')}
-            <div style="min-width:0"><div style="font-size:11.5px;color:#a9760f;font-weight:600">ดอกเบี้ยคงค้าง · Interest</div><div class="num" style="font-size:20px;font-weight:700;color:#a9760f;letter-spacing:-.4px">฿${f(totInt)}</div></div>
+            <div style="min-width:0"><div style="font-size:13px;color:#a9760f;font-weight:600">ดอกเบี้ยคงค้าง · Interest</div><div class="num" style="font-size:24px;font-weight:700;color:#a9760f;letter-spacing:-.4px">฿${f(totInt)}</div></div>
           </div>
         </div>
       </div>
       <div class="ln-hero-r">
         <div style="display:flex;align-items:center;gap:13px;padding:14px 16px;background:#f7fafb;border:1px solid #eef2f1;border-radius:15px">
           ${kic("rgba(58,110,165,.14)","#3a6ea5",'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>')}
-          <div style="flex:1"><div style="font-size:11.5px;color:#718898">จำนวนลูกหนี้</div><div style="font-size:23px;font-weight:700;color:#11324a"><span class="num">${B.length}</span> <span style="font-size:13px;font-weight:600;color:#93a7b3">ราย</span></div></div>
-          <div class="num" style="font-size:12px;color:#93a7b3;text-align:right">${periods} งวด<br>คงค้าง</div>
+          <div style="flex:1"><div style="font-size:13px;color:#718898">จำนวนลูกหนี้</div><div style="font-size:27px;font-weight:700;color:#11324a"><span class="num">${B.length}</span> <span style="font-size:15px;font-weight:600;color:#93a7b3">ราย</span></div></div>
+          <div class="num" style="font-size:13px;color:#93a7b3;text-align:right">${periods} งวด<br>คงค้าง</div>
         </div>
         <div class="ln-click" style="display:flex;align-items:center;gap:13px;padding:14px 16px;background:${overdue90>0.005?'rgba(178,59,46,.06)':'rgba(46,158,107,.07)'};border:1px solid ${overdue90>0.005?'rgba(178,59,46,.2)':'rgba(46,158,107,.22)'};border-radius:15px" onclick="loanDrill('ov90','ค้างเกินกำหนด (90 วัน+)')">
           ${kic(overdue90>0.005?"rgba(178,59,46,.14)":"rgba(46,158,107,.16)", overdue90>0.005?"#b23b2e":"#2e9e6b", overdue90>0.005?'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>':'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>')}
-          <div style="flex:1"><div style="font-size:11.5px;color:${overdue90>0.005?'#9e372c':'#1f7a52'}">ค้างเกินกำหนด (90 วัน+)</div><div style="font-size:23px;font-weight:700;color:${overdue90>0.005?'#b23b2e':'#2e9e6b'}">฿${f(overdue90)}</div></div>
-          <span style="font-size:11px;color:${overdue90>0.005?'#b23b2e':'#2e9e6b'};background:${overdue90>0.005?'rgba(178,59,46,.1)':'rgba(46,158,107,.14)'};padding:5px 11px;border-radius:8px;font-weight:600;text-align:center">${overdue90>0.005?'เร่งติดตาม':'พอร์ตปกติ'}<br>${overdue90N} ราย</span>
+          <div style="flex:1"><div style="font-size:13px;color:${overdue90>0.005?'#9e372c':'#1f7a52'}">ค้างเกินกำหนด (90 วัน+)</div><div style="font-size:27px;font-weight:700;color:${overdue90>0.005?'#b23b2e':'#2e9e6b'}">฿${f(overdue90)}</div></div>
+          <span style="font-size:12.5px;color:${overdue90>0.005?'#b23b2e':'#2e9e6b'};background:${overdue90>0.005?'rgba(178,59,46,.1)':'rgba(46,158,107,.14)'};padding:6px 12px;border-radius:8px;font-weight:600;text-align:center">${overdue90>0.005?'เร่งติดตาม':'พอร์ตปกติ'}<br>${overdue90N} ราย</span>
         </div>
       </div>
     </div>
@@ -10176,32 +10190,32 @@ function renderToolLoans(anim){
         <h3 class="ln-h3">สัดส่วนลูกหนี้รายตัว</h3>
         <p class="ln-sub">% ของยอดคงค้างรวม · Top 3 = <span class="num">${top3Pct}%</span></p>
         <div style="display:flex;justify-content:center;margin:18px 0 6px">
-          <div style="position:relative;width:184px;height:184px;border-radius:50%;background:conic-gradient(from -90deg, ${donutSegs.join(", ")});box-shadow:0 12px 28px -16px rgba(20,52,74,.5)">
-            <div style="position:absolute;inset:30px;border-radius:50%;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:inset 0 1px 4px rgba(20,52,74,.08)">
-              <span style="font-size:11px;color:#93a7b3">${B.length} ราย</span>
-              <span class="num" style="font-size:17px;font-weight:700;color:#11324a;letter-spacing:-.3px">฿${fM(totOut)}M</span>
-              <span style="font-size:10.5px;color:#93a7b3">ยอดคงค้างรวม</span>
+          <div style="position:relative;width:210px;height:210px;border-radius:50%;background:conic-gradient(from -90deg, ${donutSegs.join(", ")});box-shadow:0 12px 28px -16px rgba(20,52,74,.5)">
+            <div style="position:absolute;inset:34px;border-radius:50%;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:inset 0 1px 4px rgba(20,52,74,.08)">
+              <span style="font-size:12.5px;color:#93a7b3">${B.length} ราย</span>
+              <span class="num" style="font-size:20px;font-weight:700;color:#11324a;letter-spacing:-.3px">฿${fM(totOut)}M</span>
+              <span style="font-size:12px;color:#93a7b3">ยอดคงค้างรวม</span>
             </div>
           </div>
         </div>
         <div style="display:flex;flex-direction:column;gap:13px;margin-top:16px">
           ${B.map((b,i)=>{ const pct=totOut?(b.out/totOut*100):0; const w=b.out/maxDebtorOut*100; const col=DPAL[i%DPAL.length]; return `<button class="ln-share" onclick="loanOpenDetail('${esc(b.code)}')">
             <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:5px;gap:8px">
-              <span style="font-size:12px;color:#14344a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:7px"><span style="width:9px;height:9px;border-radius:50%;background:${col};flex:none"></span><b style="color:#0f8a7e">${esc(b.code)}</b> ${esc(b.name)}</span>
-              <span class="num" style="font-size:12px;font-weight:700;color:#11324a;white-space:nowrap">${pct.toFixed(1)}%</span>
+              <span style="font-size:13.5px;color:#14344a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:7px"><span style="width:10px;height:10px;border-radius:50%;background:${col};flex:none"></span><b style="color:#0f8a7e">${esc(b.code)}</b> ${esc(b.name)}</span>
+              <span class="num" style="font-size:13.5px;font-weight:700;color:#11324a;white-space:nowrap">${pct.toFixed(1)}%</span>
             </div>
-            <div style="height:15px;width:${Math.max(8,w)}%;border-radius:6px;background:${col};box-shadow:inset 0 0 0 1px rgba(255,255,255,.4)"></div>
+            <div style="height:18px;width:${Math.max(8,w)}%;border-radius:6px;background:${col};box-shadow:inset 0 0 0 1px rgba(255,255,255,.4)"></div>
           </button>`; }).join("")}
         </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:16px">
         <div class="ln-glass" style="padding:0;overflow:hidden">
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 22px 12px"><h3 class="ln-h3">รายการลูกหนี้</h3><span class="num" style="font-size:12px;color:#93a7b3">${B.length} ราย</span></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 22px 12px"><h3 class="ln-h3">รายการลูกหนี้</h3><span class="num" style="font-size:13.5px;color:#93a7b3">${B.length} ราย</span></div>
           <div style="overflow-x:auto"><table class="ln-tbl" style="min-width:720px"><thead><tr>
             <th>รหัส / ชื่อลูกหนี้</th><th>เงินต้น</th><th>ดอกเบี้ย</th><th>ยอดค้างรวม</th><th>สัดส่วน</th><th style="text-align:center">สถานะ</th></tr></thead><tbody>
             ${B.map(b=>{ const pct=totOut?(b.out/totOut*100):0; const st=b.status; const stC = st==="ค้างเกิน 90 วัน"?["#f8e7e2","#b23b2e"]:st==="ค้างชำระ"?["#fbf2dc","#b9821a"]:st==="ชำระครบ"?["#e7f4ec","#2e9e6b"]:["#eef6f4","#0f8a7e"]; return `
               <tr class="brow" onclick="loanOpenDetail('${esc(b.code)}')">
-                <td><div style="font-weight:700;color:#0f8a7e">${esc(b.code)}</div><div style="color:#14344a">${esc(b.name)}</div><div style="color:#93a7b3;font-size:10.5px">${b.lines.length} งวด</div></td>
+                <td><div style="font-weight:700;color:#0f8a7e">${esc(b.code)}</div><div style="color:#14344a">${esc(b.name)}</div><div style="color:#93a7b3;font-size:12px">${b.lines.length} งวด</div></td>
                 <td class="num" style="font-weight:600;color:#0d6b60">฿${f(b.principal)}</td>
                 <td class="num" style="font-weight:600;color:#a9760f">฿${f(b.interest)}</td>
                 <td class="num" style="font-weight:700;color:#11324a">฿${f(b.out)}</td>
