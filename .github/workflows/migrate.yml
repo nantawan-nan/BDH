@@ -17,52 +17,58 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Run all SQL files via Supabase Management API
-        env:
-          SUPA_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPA_PROJECT_REF: wiqfwmedoglkpavssvxr
+      - name: Install PostgreSQL client 17
         run: |
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          psql --version
+
+      # Management API บน project นี้ fail (clone) → ใช้ psql ต่อ Session pooler แทน
+      # (secret เดียวกับ backup workflow ที่ทำงานได้แล้ว)
+      - name: Apply SQL migrations via psql (Session pooler)
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$DB_URL" ]; then
+            echo "❌ ยังไม่ได้ตั้ง GitHub secret 'SUPABASE_DB_URL'"
+            echo "   Supabase → Project Settings → Database → Connection string → URI (Session pooler)"
+            exit 1
+          fi
+
           SQL_FILES=$(ls supabase/*.sql 2>/dev/null | sort)
           if [ -z "$SQL_FILES" ]; then
             echo "ไม่พบไฟล์ .sql"
             exit 0
           fi
 
-          ALL_OK=true
+          FAIL=0
           for FILE in $SQL_FILES; do
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "▶ รัน: $FILE"
-
-            PAYLOAD=$(jq -n --rawfile query "$FILE" '{"query": $query}')
-
-            RESPONSE=$(curl -s -o /tmp/res.json -w "%{http_code}" \
-              -X POST \
-              -H "Authorization: Bearer $SUPA_ACCESS_TOKEN" \
-              -H "Content-Type: application/json" \
-              -d "$PAYLOAD" \
-              "https://api.supabase.com/v1/projects/$SUPA_PROJECT_REF/database/query")
-
-            if [ "$RESPONSE" = "200" ] || [ "$RESPONSE" = "201" ]; then
-              echo "✅ $FILE — สำเร็จ"
-              jq -r 'if type=="array" then last | to_entries[] | "   \(.key): \(.value)" else . end' /tmp/res.json 2>/dev/null || true
+            # ไฟล์ idempotent ทุกตัว (CREATE IF NOT EXISTS / DROP+CREATE POLICY) → รันซ้ำได้
+            if psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f "$FILE"; then
+              echo "  ✅ ok"
             else
-              echo "❌ $FILE — ล้มเหลว (HTTP $RESPONSE)"
-              jq -r '.message // .error // .' /tmp/res.json 2>/dev/null || cat /tmp/res.json
-              ALL_OK=false
+              echo "  ❌ FAILED: $FILE"
+              FAIL=1
             fi
           done
 
-          if [ "$ALL_OK" = "true" ]; then
-            echo "✅ Migration ทั้งหมดสำเร็จ"
-          else
-            echo "❌ มีบาง migration ล้มเหลว"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          if [ "$FAIL" = "1" ]; then
+            echo "⚠️ บางไฟล์ migrate ไม่ผ่าน (ดู log ด้านบน)"
             exit 1
           fi
+          echo "✅ migrate ครบทุกไฟล์"
 
       - name: Summary
         if: always()
         run: |
           FILES=$(ls supabase/*.sql 2>/dev/null | wc -l)
-          echo "### Migration Result" >> $GITHUB_STEP_SUMMARY
-          echo "- **SQL files:** $FILES ไฟล์" >> $GITHUB_STEP_SUMMARY
-          echo "- **เวลา:** $(TZ='Asia/Bangkok' date '+%d/%m/%Y %H:%M ICT')" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "### Migration Result"
+            echo "- **SQL files:** $FILES ไฟล์"
+            echo "- **เวลา:** $(TZ='Asia/Bangkok' date '+%d/%m/%Y %H:%M ICT')"
+          } >> "$GITHUB_STEP_SUMMARY"
